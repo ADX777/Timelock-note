@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🔒 TimeLock Ghi Chú</title>
+  <style>
+    body {
+      background-color: black;
+      color: gold;
+      font-family: 'Courier New', monospace;
+      padding: 20px;
+      max-width: 800px;
+      margin: auto;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 20px;
+    }
+    input, select, textarea {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      font-size: 1em;
+      border-radius: 5px;
+      border: none;
+    }
+    button {
+      background-color: gold;
+      color: black;
+      padding: 10px 20px;
+      margin-top: 20px;
+      font-size: 1em;
+      font-weight: bold;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+    }
+    .dropdown-item {
+      color: #00FF7F !important; /* xanh hy vọng */
+      font-size: 0.9em;
+      padding: 6px 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔐 TimeLock Ghi Chú</h1>
+  <label for="note">📝 Ghi chú</label>
+  <textarea id="note" rows="4" placeholder="Nhập ghi chú..."></textarea>
+
+  <label for="coin">💱 Cặp coin</label>
+  <select id="coin">
+    <option class="dropdown-item" value="BTCUSDT">BTCUSDT</option>
+    <option class="dropdown-item" value="ETHUSDT">ETHUSDT</option>
+    <option class="dropdown-item" value="BNBUSDT">BNBUSDT</option>
+  </select>
+
+  <label for="target">💰 Mức giá mong muốn</label>
+  <input id="target" type="number" placeholder="VD: 65000" />
+
+  <label for="time">⏰ Thời gian khóa</label>
+  <input id="time" type="datetime-local" />
+
+  <button id="encryptBtn">🔐 Mã hóa</button>
+
+  <h2>📦 Mã đã mã hóa</h2>
+  <textarea id="encrypted" rows="3" readonly></textarea>
+  <button id="copyBtn">📋 Sao chép mã</button>
+
+  <hr />
+
+  <h2>🧩 Dán mã để giải mã</h2>
+  <textarea id="toDecrypt" rows="3" placeholder="Dán mã..."></textarea>
+  <button id="decryptBtn">🔓 Giải mã</button>
+
+  <h3>Kết quả giải mã:</h3>
+  <div id="result" style="white-space: pre-line; color: lightgreen;"></div>
+
+  <script>
+    document.getElementById('encryptBtn').onclick = () => {
+      const note = document.getElementById('note').value;
+      const coin = document.getElementById('coin').value;
+      const price = document.getElementById('target').value;
+      const time = document.getElementById('time').value;
+      const data = btoa(note);
+      const payload = JSON.stringify({ data, coin, price, time });
+      document.getElementById('encrypted').value = payload;
+    };
+
+    document.getElementById('copyBtn').onclick = () => {
+      navigator.clipboard.writeText(document.getElementById('encrypted').value);
+    };
+
+    document.getElementById('decryptBtn').onclick = () => {
+      try {
+        const input = document.getElementById('toDecrypt').value;
+        const obj = JSON.parse(input);
+        const note = atob(obj.data);
+        const coin = obj.coin;
+        const price = obj.price;
+        const time = obj.time;
+        document.getElementById('result').innerText =
+          `📝 Ghi chú: ${note}\n💱 Coin: ${coin}\n💰 Giá kỳ vọng: ${price}\n⏰ Mở khóa sau: ${time}`;
+      } catch (e) {
+        document.getElementById('result').innerText = '❌ Mã không hợp lệ hoặc lỗi.';
+      }
+    };
+  </script>
+</body>
+</html>
