@@ -1,0 +1,208 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🔐 TimeLock Ghi Chú</title>
+  <style>
+    body {
+      background-color: black;
+      color: gold;
+      font-family: 'Courier New', monospace;
+      padding: 20px;
+      max-width: 800px;
+      margin: auto;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    input, textarea, select, button {
+      width: 100%;
+      margin-top: 5px;
+      margin-bottom: 15px;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 6px;
+      border: none;
+      box-sizing: border-box;
+      background-color: #111;
+      color: gold;
+    }
+    input[type="datetime-local"] {
+      color-scheme: dark;
+    }
+    #priceInfo {
+      color: #00ff00;
+      font-weight: bold;
+      margin-top: -10px;
+      margin-bottom: 10px;
+    }
+    #output, #decrypted {
+      background: #111;
+      border-radius: 6px;
+      padding: 10px;
+      overflow-wrap: break-word;
+    }
+    button {
+      background-color: gold;
+      color: black;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔐 TimeLock Ghi Chú</h1>
+
+  <label for="note">✏️ Ghi chú bí mật</label>
+  <textarea id="note" placeholder="Nội dung cần mã hóa..."></textarea>
+
+  <label for="coin">💱 Cặp coin (đuôi USDT)</label>
+  <input id="coin" list="coinlist" placeholder="VD: BTCUSDT"/>
+  <datalist id="coinlist"></datalist>
+  <div id="priceInfo">💲 Giá hiện tại: —</div>
+
+  <label for="target">💰 Mức giá mong muốn</label>
+  <input id="target" type="number" step="0.01" placeholder="VD: 65000"/>
+
+  <label for="datetime">⏰ Thời gian khóa</label>
+  <input id="datetime" type="datetime-local"/>
+
+  <button onclick="encrypt()">🔐 Mã hóa</button>
+  <label for="result">📦 Mã đã mã hóa</label>
+  <textarea id="result" readonly></textarea>
+  <button onclick="copy('result')">📋 Sao chép mã</button>
+
+  <hr/>
+
+  <label for="decryptText">🧩 Dán mã để giải mã</label>
+  <textarea id="decryptText" placeholder="Dán chuỗi mã hóa..."></textarea>
+  <button onclick="decrypt()">🔓 Giải mã</button>
+
+  <h3>Kết quả giải mã:</h3>
+  <div id="decrypted"></div>
+
+  <script>
+    let coinList = [];
+    let priceTimer;
+
+    async function fetchCoins() {
+      const res = await fetch("https://api.binance.com/api/v3/exchangeInfo");
+      const data = await res.json();
+      coinList = data.symbols
+        .filter(c => c.symbol.endsWith("USDT"))
+        .map(c => c.symbol)
+        .sort();
+    }
+
+    document.getElementById("coin").addEventListener("input", async function() {
+      const val = this.value.toUpperCase();
+      const matches = coinList.filter(c => c.startsWith(val));
+      const dl = document.getElementById("coinlist");
+      dl.innerHTML = matches.map(c => `<option value="${c}">`).join("");
+
+      clearInterval(priceTimer);
+      updatePrice(val);
+      priceTimer = setInterval(() => updatePrice(val), 5000);
+    });
+
+    async function updatePrice(symbol) {
+      try {
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
+        const data = await res.json();
+        document.getElementById("priceInfo").innerText = `💲 Giá hiện tại: $${parseFloat(data.price).toLocaleString()}`;
+      } catch {
+        document.getElementById("priceInfo").innerText = "⚠️ Không thể lấy giá.";
+      }
+    }
+
+    async function encrypt() {
+      const note = document.getElementById("note").value.trim();
+      const coin = document.getElementById("coin").value.toUpperCase().trim();
+      const price = document.getElementById("target").value;
+      const time = document.getElementById("datetime").value;
+
+      if (!note || !coin || !price || !time) return alert("⛔ Vui lòng điền đầy đủ!");
+
+      const iv = crypto.getRandomValues(new Uint8Array(16));
+      const keyRaw = new TextEncoder().encode(coin + price + time);
+      const hash = await crypto.subtle.digest("SHA-256", keyRaw);
+      const key = await crypto.subtle.importKey("raw", hash, "AES-CBC", false, ["encrypt"]);
+      const encoded = new TextEncoder().encode(note);
+      const encrypted = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, key, encoded);
+      const json = {
+        data: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
+        iv: btoa(String.fromCharCode(...iv)),
+        coin,
+        price,
+        time
+      };
+      document.getElementById("result").value = JSON.stringify(json);
+    }
+
+    function copy(id) {
+      const el = document.getElementById(id);
+      el.select();
+      document.execCommand("copy");
+      alert("📋 Đã sao chép!");
+    }
+
+    async function decrypt() {
+      const raw = document.getElementById("decryptText").value;
+      try {
+        const json = JSON.parse(raw);
+        const { data, iv, coin, price, time } = json;
+
+        const [bin, cg, cb, nowRes] = await Promise.all([
+          fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${coin}`),
+          fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coin.slice(0,-4).toLowerCase()}&vs_currencies=usd`),
+          fetch(`https://api.coinbase.com/v2/prices/${coin.slice(0,-4)}-USD/spot`),
+          fetch("https://worldtimeapi.org/api/timezone/Etc/UTC")
+        ]);
+
+        const prices = [];
+
+        if (bin.ok) {
+          const r = await bin.json();
+          prices.push(+r.price);
+        }
+        if (cg.ok) {
+          const r = await cg.json();
+          prices.push(r[coin.slice(0,-4).toLowerCase()].usd);
+        }
+        if (cb.ok) {
+          const r = await cb.json();
+          prices.push(+r.data.amount);
+        }
+
+        const avg = prices.reduce((a,b)=>a+b,0)/prices.length;
+        const now = (await nowRes.json()).utc_datetime;
+        const current = new Date(now);
+        const unlock = new Date(time);
+
+        if (avg >= parseFloat(price) || current >= unlock) {
+          const keyRaw = new TextEncoder().encode(coin + price + time);
+          const hash = await crypto.subtle.digest("SHA-256", keyRaw);
+          const key = await crypto.subtle.importKey("raw", hash, "AES-CBC", false, ["decrypt"]);
+          const ivBytes = Uint8Array.from(atob(iv), c => c.charCodeAt(0));
+          const ct = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+          const decrypted = await crypto.subtle.decrypt({ name: "AES-CBC", iv: ivBytes }, key, ct);
+          document.getElementById("decrypted").innerText = new TextDecoder().decode(decrypted);
+        } else {
+          document.getElementById("decrypted").innerText = 
+            `⏰ Giờ hiện tại: ${now}
+💰 Giá trung bình: $${avg.toFixed(2)}
+🔒 Chưa thể giải mã vào lúc này.`;
+        }
+      } catch (e) {
+        document.getElementById("decrypted").innerText = "❌ Mã không hợp lệ hoặc lỗi.";
+      }
+    }
+
+    fetchCoins();
+  </script>
+</body>
+</html>
